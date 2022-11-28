@@ -3356,29 +3356,50 @@ makeTsqlExpr(ParserRuleContext *ctx, bool addSelect)
 	return makeTsqlExpr(::getFullText(ctx), addSelect);
 }
 
+// work around for mutibyte utf8 query with 'with (nolock)'
+size_t utf8RealIndex(char * s, size_t idx){
+	size_t real=0;
+	for (int i=idx;i>0;i--){
+		if (s[real]==0){
+			return real;
+		}else if(s[real]<=0x7f){
+			real++;
+		}else if((s[real]&0xE0)==0xC0){
+            real+=2;
+        }else if((s[real]&0xF0)==0xE0){
+            real+=3;
+        }else if((s[real]&0xF8)==0xF0){
+            real+=4;
+        }
+	}
+    return real;
+}
+
 // Helper function to remove/replace token from the query string in PLtsql_expr.
 // Please make sure to pass correct baseCtx which generates PLtsql_expr
 // because we'll figure out internal indices to be replaced based on relative indices
 // Also, we support in-place replacement only. 'repl' string should not be longer than original one
 void replaceTokenStringFromQuery(PLtsql_expr* expr, Token* startToken, Token* endToken, const char *repl, ParserRuleContext *baseCtx)
 {
+	// printf("expr:\n%s\n",expr->query);
 	size_t startIdx = startToken->getStartIndex();
 	if (startIdx == INVALID_INDEX)
 		throw PGErrorWrapperException(ERROR, ERRCODE_SYNTAX_ERROR, "can't generate an internal query", getLineAndPos(baseCtx));
-
+	startIdx=utf8RealIndex(expr->query,startIdx);
 	size_t endIdx = endToken->getStopIndex();
 	if (endIdx == INVALID_INDEX)
 		throw PGErrorWrapperException(ERROR, ERRCODE_SYNTAX_ERROR, "can't generate an internal query", getLineAndPos(baseCtx));
-
+	endIdx=utf8RealIndex(expr->query,endIdx);
 	size_t baseIdx = baseCtx->getStart()->getStartIndex();
 	if (endIdx == INVALID_INDEX)
 		throw PGErrorWrapperException(ERROR, ERRCODE_SYNTAX_ERROR, "can't generate an internal query", getLineAndPos(baseCtx));
-
+	baseIdx=utf8RealIndex(expr->query,baseIdx);
 	// repl string is too long. we cannot replace with it in place.
 	if (repl && strlen(repl) > endIdx - startIdx + 1)
 		throw PGErrorWrapperException(ERROR, ERRCODE_SYNTAX_ERROR, "can't generate an internal query", getLineAndPos(baseCtx));
 
 	Assert(expr->query);
+
 	memset(expr->query + startIdx - baseIdx, ' ', endIdx - startIdx + 1);
 
 	if (repl)
