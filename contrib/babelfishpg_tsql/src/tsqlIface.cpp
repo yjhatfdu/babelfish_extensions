@@ -3364,7 +3364,7 @@ size_t utf8RealIndex(char * s, size_t idx){
 	for (int i=idx;i>0;i--){
 		if (s[real]==0){
 			return real;
-		}else if(s[real]<=0x7f){
+		}else if((s[real]&0x80)==0){
 			real++;
 		}else if((s[real]&0xE0)==0xC0){
             real+=2;
